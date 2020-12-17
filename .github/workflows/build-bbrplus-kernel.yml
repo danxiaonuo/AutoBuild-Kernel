@@ -96,6 +96,8 @@ jobs:
       run: |
         git clone --depth 1 $REPO_URL -b $REPO_BRANCH kernel
         cd kernel
+        wget https://raw.githubusercontent.com/danxiaonuo/AutoBuild-Kernel/main/patch/xiaonuo.patch
+        patch -p1 < xiaonuo.patch
         echo "KERNELROOT=$PWD" >> $GITHUB_ENV
         echo "::set-output name=KERNELROOT::$(echo $PWD)"
         echo "useVersionInfo=$(git show -s --date=short --format="作者: %an<br/>日期: %cd<br/>Commit: %s")" >> $GITHUB_ENV
@@ -208,4 +210,4 @@ jobs:
         keep_latest: 1         #保留多少个releases不删除
         delete_tags: true
       env:
-        GITHUB_TOKEN: ${{ secrets.KERNEL_TOKEN }}    
+        GITHUB_TOKEN: ${{ secrets.KERNEL_TOKEN }}
