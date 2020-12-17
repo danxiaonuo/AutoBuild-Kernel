@@ -55,7 +55,7 @@ env:
 
 # 任务集
 jobs:
-  uola:
+  bbrplus:
     # 选择虚拟环境
     runs-on: ubuntu-latest
     if: github.event.repository.owner.id == github.event.sender.id
