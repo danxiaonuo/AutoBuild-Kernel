@@ -194,8 +194,8 @@ jobs:
       uses: emon100/Action-Serverchan@master
       with:
         SCKEY: ${{ secrets.SCKEY }}
-        text: ${{ env.RELEASE_TAG }}固件编译完成！
-        desp: 固件名称:${{ env.RELEASE_TAG }} 固件地址:${{ env.GITHUB_RELEASE }}/tag/${{ env.RELEASE_TAG }}
+        text: ${{ env.RELEASE_TAG }}内核编译完成！
+        desp: 内核名称:${{ env.RELEASE_TAG }} 内核地址:${{ env.GITHUB_RELEASE }}/tag/${{ env.RELEASE_TAG }}
     
     - name: 删除旧的GitHub-workflow
       uses: ActionsRML/delete-workflow-runs@main
