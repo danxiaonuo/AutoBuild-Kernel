@@ -143,8 +143,24 @@ jobs:
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
         echo "::set-output name=FIRMWARE::$(echo $PWD)"
         echo "::set-output name=status::success"
-   
-   # 上传固件到奶牛快传
+    
+    # 生成标签
+    - name: 生成标签
+      id: tag
+      if: steps.compile.outputs.status == 'success' && env.CREATE_RELEASE == 'true' && !cancelled()
+      run: |
+        echo "RELEASE_TAG=bbrplus-kernel-${{ env.RELEASE_DATE }}" >> $GITHUB_ENV
+        echo "::set-output name=status::success"
+        
+    # 上传固件
+    - name: 上传固件
+      uses: actions/upload-artifact@v2
+      if: steps.organize.outputs.status == 'success' && !cancelled()
+      with:
+        name: ${{ env.RELEASE_TAG }}
+        path: ${{ env.FIRMWARE }}
+
+    # 上传固件到奶牛快传
     - name: 上传固件到奶牛快传
       id: cowtransfer
       if: steps.organize.outputs.status == 'success' && env.UPLOAD_COWTRANSFER == 'true' && !cancelled()
