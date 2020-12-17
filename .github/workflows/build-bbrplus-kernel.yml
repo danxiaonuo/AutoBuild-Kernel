@@ -1,1 +1,211 @@
+#=================================================
+# https://github.com/danxiaonuo/AutoBuild-Kernel
+# Description: Build OpenWrt using GitHub Actions
+# Lisence: MIT
+# Author: danxiaonuo
+# Blog: https://www.danxiaonuo.com
+#=================================================
+# 编译的名称
+name: 编译build-bbrplus-kernel内核
 
+# 设置触发条件
+on:
+  # 手动触发工作流
+  workflow_dispatch:
+    inputs:
+      name:
+        description: 'build-bbrplus-kernel'
+        required: true
+        default: '编译build-bbrplus-kernel内核'
+
+  # 点赞☆Star触发编译
+  watch:
+     types: [started]
+
+# 环境变量
+env:
+   # 源码仓库地址
+   REPO_URL: https://github.com/torvalds/linux
+   # 源码分支
+   REPO_BRANCH: master
+   # 自定义执行脚本名称
+   DIY_SH: scripts/build-bbrplus-kernel.sh
+   # 时区设置
+   TZ: Asia/Shanghai
+   # SSH 连接Actions功能
+   SSH_ACTIONS: false
+   # 上传固件到奶牛快传
+   UPLOAD_COWTRANSFER: true
+   # 上传固件到 WeTransfer
+   UPLOAD_WETRANSFER: true
+   # Github 用户名
+   GITHUB_USER_NAME: danxiaonuo
+   # Github 邮箱
+   GITHUB_USER_EMAIL: ${{ secrets.EMAIL }}
+   # Github
+   GITHUB: github.com/danxiaonuo/AutoBuild-Kernel.git
+   # 创建+上传发布
+   CREATE_RELEASE: true
+   # 编译者
+   BUILD_USER: danxiaonuo
+   # 微信通知
+   SEND_WECHAT_MSG: true
+   # 发行固件地址
+   GITHUB_RELEASE: https://github.com/danxiaonuo/AutoBuild-Kernel/releases
+
+# 任务集
+jobs:
+  uola:
+    # 选择虚拟环境
+    runs-on: ubuntu-latest
+    if: github.event.repository.owner.id == github.event.sender.id
+
+   # 运行步骤
+    steps:
+    
+    # 检出各个代码模块
+    - name: 检出各个代码模块
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+        
+    # 初始化系统环境
+    - name: 初始化系统环境
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        # 删除docker镜像
+        sudo -E docker rmi -f $(docker images -aq)
+        # 删除源
+        sudo -E rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        # 更换镜像
+        sudo -E sed -i s#http://*.*ubuntu.com#https://mirrors.ustc.edu.cn#g /etc/apt/sources.list
+        # 更新源
+        sudo -E apt-get -qqy update
+        # 更新系统
+        sudo -E apt-get -qqy update && sudo -E apt-get -qqy dist-upgrade
+        # 安装依赖
+        sudo -E apt-get -qqy install bash-completion conntrack ipset ipvsadm jq libseccomp2 nfs-common psmisc rsync socat make gcc gcc-multilib g++-multilib g++-multilib build-essential asciidoc binutils gawk gettext libncurses5-dev libz-dev autoconf automake openssl locate libtool autopoint device-tree-compiler patch sysstat firewalld chrony ntpdate tcpdump telnet lsof iftop htop unzip zip wget curl lvm2 tree axel zlib1g-dev libc6-dev-i386 subversion flex uglifyjs net-tools vim lrzsz libssl-dev texinfo libglib2.0-dev xmlto upx libelf-dev rsyslog bash-completion git tmux bzip2 python2.7 python3 p7zip p7zip-full msmtp qemu-utils antlr3 gperf swig zsh nano screen gnupg ca-certificates uuid-runtime tzdata openssh-server lrzsz xz-utils pkg-config bison bc dwarves bridge-utils
+        # 清理依赖
+        sudo -E apt-get -qqy autoremove --purge && sudo -E apt-get -qqy autoclean
+        # 设置时区
+        sudo -E timedatectl set-timezone "$TZ"
+        
+    # 克隆源码
+    - name: 克隆源码
+      run: |
+        git clone --depth 1 $REPO_URL -b $REPO_BRANCH kernel
+        cd kernel
+        echo "KERNELROOT=$PWD" >> $GITHUB_ENV
+        echo "::set-output name=KERNELROOT::$(echo $PWD)"
+        echo "useVersionInfo=$(git show -s --date=short --format="作者: %an<br/>日期: %cd<br/>Commit: %s")" >> $GITHUB_ENV
+        echo "DATE=$(TZ=CST-8 date "+%Y年%m月%d号-%H点%M分%S秒")" >> $GITHUB_ENV
+        echo "RELEASE_DATE=$(TZ=CST-8 date +"%Y年%m月%d号-%H点")" >> $GITHUB_ENV
+            
+   # 使用旧内核配置菜单
+    - name: 使用旧内核配置菜单
+      working-directory: ./kernel
+      run:  |
+        yes "" | make oldconfig
+  
+    # 禁用签名调试
+    - name: 禁用签名调试
+      working-directory: ./kernel
+      run:  |
+         scripts/config --disable MODULE_SIG && scripts/config --disable DEBUG_INFO
+         
+    # 加载自定义脚本  
+    - name: 加载自定义脚本
+      run: |
+        chmod +x $DIY_SH
+        cd kernel
+        ../$DIY_SH
+  
+    # 编译内核
+    - name: 编译内核
+      working-directory: ./kernel
+      id: compile
+      run: |
+         make bindeb-pkg -o $KERNELROOT -j$(($(nproc)+1))
+         echo "::set-output name=status::success"
+    
+    # 整理文件
+    - name: 整理文件
+      id: organize
+      if: steps.compile.outputs.status == 'success' && !cancelled()
+      run: |
+        mkdir -pv output 
+        mv linux-* output/
+        cp -rf kernel/.config output/config
+        cd output/
+        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+        echo "::set-output name=FIRMWARE::$(echo $PWD)"
+        echo "::set-output name=status::success"
+   
+   # 上传固件到奶牛快传
+    - name: 上传固件到奶牛快传
+      id: cowtransfer
+      if: steps.organize.outputs.status == 'success' && env.UPLOAD_COWTRANSFER == 'true' && !cancelled()
+      run: |
+        curl -fsSL git.io/file-transfer | sh
+        ./transfer cow --block 2621440 -s -p 64 --no-progress ${FIRMWARE} 2>&1 | tee cowtransfer.log
+        echo "::warning file=cowtransfer.com::$(cat cowtransfer.log | grep https)"
+        echo "COWTRANSFER_URL=$(cat cowtransfer.log | grep https | cut -f3 -d" ")" >> $GITHUB_ENV 
+        echo "::set-output name=COWTRANSFER_URL::$(cat cowtransfer.log | grep https | cut -f3 -d" ")"
+    
+    # 上传固件到WeTransfer
+    - name: 上传固件到WeTransfer
+      id: wetransfer
+      if: steps.organize.outputs.status == 'success' && env.UPLOAD_WETRANSFER == 'true' && !cancelled()
+      run: |
+        curl -fsSL git.io/file-transfer | sh
+        ./transfer wet -s -p 16 --no-progress ${FIRMWARE} 2>&1 | tee wetransfer.log
+        echo "::warning file=wetransfer.com::$(cat wetransfer.log | grep https)"
+        echo "WETRANSFER_URL=$(cat wetransfer.log | grep https | cut -f3 -d" ")" >> $GITHUB_ENV 
+        echo "::set-output name=WETRANSFER_URL::$(cat wetransfer.log | grep https | cut -f3 -d" ")"
+    
+    # 发行固件
+    - name: 发行固件
+      uses: softprops/action-gh-release@v1
+      if: steps.tag.outputs.status == 'success' && !cancelled()
+      env:
+        GITHUB_TOKEN: ${{ secrets.KERNEL_TOKEN }}
+      with:
+        name: 自动编译 / ${{ env.RELEASE_TAG }}
+        tag_name: ${{ env.RELEASE_TAG }}
+        body: |            
+            1、本内核为自动编译
+            2、发行版中只提供完整的内核
+            3、源码：${{ env.REPO_URL }}
+            -- Build by ${{ env.BUILD_USER }} @ with Github Action on ${{ env.RELEASE_TAG }}
+            🚀 Auto build | 自动编译
+            🔗 [Cowtransfer | 奶牛快传](${{ steps.cowtransfer.outputs.COWTRANSFER_URL }}) 
+            🔗 [WeTransfer](${{ steps.wetransfer.outputs.WETRANSFER_URL }})       
+            当前使用版本:            
+            ${{ env.useVersionInfo }}
+            ${{ github.event.commits[0].message }}
+        files: ${{ env.FIRMWARE }}/*
+        
+    # 微信通知
+    - name: 微信通知
+      if: steps.compile.outputs.status == 'success' && env.SEND_WECHAT_MSG == 'true' && !cancelled()
+      uses: emon100/Action-Serverchan@master
+      with:
+        SCKEY: ${{ secrets.SCKEY }}
+        text: ${{ env.RELEASE_TAG }}固件编译完成！
+        desp: 固件名称:${{ env.RELEASE_TAG }} 固件地址:${{ env.GITHUB_RELEASE }}/tag/${{ env.RELEASE_TAG }}
+    
+    - name: 删除旧的GitHub-workflow
+      uses: ActionsRML/delete-workflow-runs@main
+      with:
+        retain_days: 0
+        keep_minimum_runs: 1    #保留多少个workflow不删除
+
+    - name: 删除自动发布的旧固件
+      uses: dev-drprasad/delete-older-releases@v0.1.0
+      if: steps.organizer.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true'
+      with:
+        keep_latest: 1         #保留多少个releases不删除
+        delete_tags: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.KERNEL_TOKEN }}    
