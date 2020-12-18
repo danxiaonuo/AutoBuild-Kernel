@@ -30,6 +30,7 @@ sed -i '/CONFIG_DEFAULT_BBR/d' .config
 sed -i '/CONFIG_DEFAULT_BBR2/d' .config
 sed -i '/CONFIG_DEFAULT_RENO/d' .config
 sed -i '/CONFIG_DEFAULT_TCP_CONG/d' .config
+sed -i '/CONFIG_DEFAULT_NET_SCH/d' .config
 sed -i '/CONFIG_IP_VS/d' .config
 sed -i '/CONFIG_IP_VS_IPV6/d' .config
 sed -i '/CONFIG_IP_VS_DEBUG/d' .config
@@ -94,6 +95,7 @@ CONFIG_TCP_CONG_BBR2=y
 CONFIG_DEFAULT_BBR2=y
 # CONFIG_DEFAULT_RENO is not set
 CONFIG_DEFAULT_TCP_CONG="bbr2"
+CONFIG_DEFAULT_NET_SCH="fq"
 CONFIG_IP_VS=y
 CONFIG_IP_VS_IPV6=y
 CONFIG_IP_VS_DEBUG=y
