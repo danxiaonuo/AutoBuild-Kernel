@@ -53,6 +53,7 @@ sed -i '/CONFIG_IP_VS_SH/d' .config
 sed -i '/CONFIG_IP_VS_MH/d' .config
 sed -i '/CONFIG_IP_VS_SED/d' .config
 sed -i '/CONFIG_IP_VS_NQ/d' .config
+sed -i '/CONFIG_IP_VS_TWOS/d' .config
 sed -i '/CONFIG_IP_VS_SH_TAB_BITS/d' .config
 sed -i '/CONFIG_IP_VS_MH_TAB_INDEX/d' .config
 sed -i '/CONFIG_IP_VS_FTP/d' .config
@@ -118,6 +119,7 @@ CONFIG_IP_VS_SH=y
 CONFIG_IP_VS_MH=y
 CONFIG_IP_VS_SED=y
 CONFIG_IP_VS_NQ=y
+CONFIG_IP_VS_TWOS=y
 CONFIG_IP_VS_SH_TAB_BITS=8
 CONFIG_IP_VS_MH_TAB_INDEX=12
 CONFIG_IP_VS_FTP=y
