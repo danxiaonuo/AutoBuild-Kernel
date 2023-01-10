@@ -114,10 +114,6 @@ jobs:
     - name: 禁用签名调试
       working-directory: ./kernel
       run:  |
-         scripts/config --disable SYSTEM_TRUSTED_KEYS
-         scripts/config --disable SYSTEM_TRUSTED_KEYRING
-         scripts/config --disable SYSTEM_REVOCATION_KEYS
-         scripts/config --disable SYSTEM_REVOCATION_LIST
          scripts/config --disable SECURITY_LOCKDOWN_LSM
          scripts/config --disable DEBUG_INFO
          scripts/config --disable MODULE_SIG
@@ -165,28 +161,6 @@ jobs:
       with:
         name: ${{ env.RELEASE_TAG }}
         path: ${{ env.FIRMWARE }}
-
-    # 上传固件到奶牛快传
-    - name: 上传固件到奶牛快传
-      id: cowtransfer
-      if: steps.organize.outputs.status == 'success' && env.UPLOAD_COWTRANSFER == 'true' && !cancelled()
-      run: |
-        curl -fsSL git.io/file-transfer | sh
-        ./transfer cow --block 2621440 -s -p 64 --no-progress ${FIRMWARE} 2>&1 | tee cowtransfer.log
-        echo "::warning file=cowtransfer.com::$(cat cowtransfer.log | grep https)"
-        echo "COWTRANSFER_URL=$(cat cowtransfer.log | grep https | cut -f3 -d" ")" >> $GITHUB_ENV 
-        echo "::set-output name=COWTRANSFER_URL::$(cat cowtransfer.log | grep https | cut -f3 -d" ")"
-    
-    # 上传固件到WeTransfer
-    - name: 上传固件到WeTransfer
-      id: wetransfer
-      if: steps.organize.outputs.status == 'success' && env.UPLOAD_WETRANSFER == 'true' && !cancelled()
-      run: |
-        curl -fsSL git.io/file-transfer | sh
-        ./transfer wet -s -p 16 --no-progress ${FIRMWARE} 2>&1 | tee wetransfer.log
-        echo "::warning file=wetransfer.com::$(cat wetransfer.log | grep https)"
-        echo "WETRANSFER_URL=$(cat wetransfer.log | grep https | cut -f3 -d" ")" >> $GITHUB_ENV 
-        echo "::set-output name=WETRANSFER_URL::$(cat wetransfer.log | grep https | cut -f3 -d" ")"
     
     # 发行固件
     - name: 发行固件
