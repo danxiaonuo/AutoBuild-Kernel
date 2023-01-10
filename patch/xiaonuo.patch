@@ -1,46 +1,46 @@
 diff --git a/include/net/inet_connection_sock.h b/include/net/inet_connection_sock.h
-index 3c8c594..20176b7 100644
+index c2b15f7e5..68d948b40 100644
 --- a/include/net/inet_connection_sock.h
 +++ b/include/net/inet_connection_sock.h
-@@ -134,8 +134,8 @@ struct inet_connection_sock {
+@@ -135,8 +135,8 @@ struct inet_connection_sock {
  	u32			  icsk_probes_tstamp;
  	u32			  icsk_user_timeout;
  
 -	u64			  icsk_ca_priv[104 / sizeof(u64)];
--#define ICSK_CA_PRIV_SIZE      (13 * sizeof(u64))
+-#define ICSK_CA_PRIV_SIZE	  sizeof_field(struct inet_connection_sock, icsk_ca_priv)
 +	u64			  icsk_ca_priv[112 / sizeof(u64)];
 +#define ICSK_CA_PRIV_SIZE      (14 * sizeof(u64))
  };
  
  #define ICSK_TIME_RETRANS	1	/* Retransmit timer */
 diff --git a/include/net/tcp.h b/include/net/tcp.h
-index d05193c..e4e2e2f 100644
+index 5b70b241c..e507804c5 100644
 --- a/include/net/tcp.h
 +++ b/include/net/tcp.h
-@@ -577,6 +577,8 @@ __u32 cookie_v6_init_sequence(const struct sk_buff *skb, __u16 *mss);
+@@ -591,6 +591,8 @@ __u32 cookie_v6_init_sequence(const struct sk_buff *skb, __u16 *mss);
  #endif
  /* tcp_output.c */
  
 +u32 tcp_tso_autosize(const struct sock *sk, unsigned int mss_now,
-+		     int min_tso_segs);
++                               int min_tso_segs);
+ void tcp_skb_entail(struct sock *sk, struct sk_buff *skb);
+ void tcp_mark_push(struct tcp_sock *tp, struct sk_buff *skb);
  void __tcp_push_pending_frames(struct sock *sk, unsigned int cur_mss,
- 			       int nonagle);
- int __tcp_retransmit_skb(struct sock *sk, struct sk_buff *skb, int segs);
-@@ -1057,6 +1059,9 @@ struct tcp_congestion_ops {
- 
+@@ -1087,6 +1089,9 @@ struct tcp_congestion_ops {
  	/* override sysctl_tcp_min_tso_segs */
  	u32 (*min_tso_segs)(struct sock *sk);
-+    
-+	/* suggest number of segments for each skb to transmit (optional) */
-+    u32 (*tso_segs_goal)(struct sock *sk);
  
++ 	/* suggest number of segments for each skb to transmit (optional) */
++ 	u32 (*tso_segs_goal)(struct sock *sk);
++
  	/* call when packets are delivered to update cwnd and pacing rate,
  	 * after all the ca_state processing. (optional)
+ 	 */
 diff --git a/net/ipv4/Kconfig b/net/ipv4/Kconfig
-index 87983e7..1fbbe3e 100644
+index 2dfb12230..75616283c 100644
 --- a/net/ipv4/Kconfig
 +++ b/net/ipv4/Kconfig
-@@ -486,7 +486,7 @@ config TCP_CONG_BIC
+@@ -495,7 +495,7 @@ config TCP_CONG_BIC
  
  config TCP_CONG_CUBIC
  	tristate "CUBIC TCP"
@@ -49,12 +49,12 @@ index 87983e7..1fbbe3e 100644
  	help
  	  This is version 2.0 of BIC-TCP which uses a cubic growth function
  	  among other techniques.
-@@ -669,9 +669,18 @@ config TCP_CONG_BBR
+@@ -678,9 +678,18 @@ config TCP_CONG_BBR
  	  AQM schemes that do not provide a delay signal. It requires the fq
  	  ("Fair Queue") pacing packet scheduler.
  
 +config TCP_CONG_BBRPLUS
-+        bool "BBRPLUS TCP"
++        tristate "BBRPLUS TCP"
 +        default y
 +        help
 +
@@ -69,7 +69,7 @@ index 87983e7..1fbbe3e 100644
  	help
  	  Select the TCP congestion control that will be used by default
  	  for all connections.
-@@ -706,6 +715,9 @@ choice
+@@ -715,6 +724,9 @@ choice
  	config DEFAULT_BBR
  		bool "BBR" if TCP_CONG_BBR=y
  
@@ -79,7 +79,7 @@ index 87983e7..1fbbe3e 100644
  	config DEFAULT_RENO
  		bool "Reno"
  endchoice
-@@ -730,7 +742,8 @@ config DEFAULT_TCP_CONG
+@@ -739,7 +751,8 @@ config DEFAULT_TCP_CONG
  	default "dctcp" if DEFAULT_DCTCP
  	default "cdg" if DEFAULT_CDG
  	default "bbr" if DEFAULT_BBR
@@ -90,7 +90,7 @@ index 87983e7..1fbbe3e 100644
  config TCP_MD5SIG
  	bool "TCP: MD5 Signature Option support (RFC2385)"
 diff --git a/net/ipv4/Makefile b/net/ipv4/Makefile
-index bbdd9c4..164988c 100644
+index bbdd9c44f..164988c16 100644
 --- a/net/ipv4/Makefile
 +++ b/net/ipv4/Makefile
 @@ -46,6 +46,7 @@ obj-$(CONFIG_INET_TCP_DIAG) += tcp_diag.o
@@ -103,10 +103,10 @@ index bbdd9c4..164988c 100644
  obj-$(CONFIG_TCP_CONG_CUBIC) += tcp_cubic.o
 diff --git a/net/ipv4/tcp_bbrplus.c b/net/ipv4/tcp_bbrplus.c
 new file mode 100644
-index 0000000..05cf76a
+index 000000000..b1a98a7a2
 --- /dev/null
 +++ b/net/ipv4/tcp_bbrplus.c
-@@ -0,0 +1,1187 @@
+@@ -0,0 +1,1215 @@
 +/* Bottleneck Bandwidth and RTT (BBR) congestion control
 + *
 + * BBR congestion control computes the sending rate based on the delivery
@@ -165,6 +165,8 @@ index 0000000..05cf76a
 + * otherwise TCP stack falls back to an internal pacing using one high
 + * resolution timer per TCP socket and may use more resources.
 + */
++#include <linux/btf.h>
++#include <linux/btf_ids.h>
 +#include <linux/module.h>
 +#include <net/tcp.h>
 +#include <linux/inet_diag.h>
@@ -462,7 +464,7 @@ index 0000000..05cf76a
 +    } else {             /* no RTT sample yet */
 +        rtt_us = USEC_PER_MSEC;  /* use nominal default RTT */
 +    }
-+    bw = (u64)tp->snd_cwnd * BW_UNIT;
++    bw = (u64)tcp_snd_cwnd(tp) * BW_UNIT;
 +    do_div(bw, rtt_us);
 +    sk->sk_pacing_rate = bbr_bw_to_pacing_rate(sk, bw, bbr_high_gain);
 +}
@@ -512,9 +514,9 @@ index 0000000..05cf76a
 +    struct bbr *bbr = inet_csk_ca(sk);
 +
 +    if (bbr->prev_ca_state < TCP_CA_Recovery && bbr->mode != BBR_PROBE_RTT)
-+        bbr->prior_cwnd = tp->snd_cwnd;  /* this cwnd is good enough */
++        bbr->prior_cwnd = tcp_snd_cwnd(tp);  /* this cwnd is good enough */
 +    else  /* loss recovery or BBR_PROBE_RTT have temporarily cut cwnd */
-+        bbr->prior_cwnd = max(bbr->prior_cwnd, tp->snd_cwnd);
++        bbr->prior_cwnd = max(bbr->prior_cwnd, tcp_snd_cwnd(tp));
 +}
 +
 +static void bbr_cwnd_event(struct sock *sk, enum tcp_ca_event event)
@@ -626,7 +628,7 @@ index 0000000..05cf76a
 +    struct tcp_sock *tp = tcp_sk(sk);
 +    struct bbr *bbr = inet_csk_ca(sk);
 +    u8 prev_state = bbr->prev_ca_state, state = inet_csk(sk)->icsk_ca_state;
-+    u32 cwnd = tp->snd_cwnd;
++    u32 cwnd = tcp_snd_cwnd(tp);
 +
 +    /* An ACK for P pkts should release at most 2*P packets. We do this
 +     * in two steps. First, here we deduct the number of lost packets.
@@ -694,9 +696,9 @@ index 0000000..05cf76a
 +    cwnd = max(cwnd, bbr_cwnd_min_target);
 +
 +done:
-+    tp->snd_cwnd = min(cwnd, tp->snd_cwnd_clamp);   /* apply global cap */
++    tcp_snd_cwnd_set(tp, min(cwnd, tp->snd_cwnd_clamp));	/* apply global cap */
 +    if (bbr->mode == BBR_PROBE_RTT)  /* drain queue, refresh min_rtt */
-+        tp->snd_cwnd = min(tp->snd_cwnd, bbr_cwnd_min_target);
++        tcp_snd_cwnd_set(tp, min(tcp_snd_cwnd(tp), bbr_cwnd_min_target));
 +}
 +
 +/* End cycle phase if it's time and/or we hit the phase's in-flight target. */
@@ -1055,7 +1057,7 @@ index 0000000..05cf76a
 +    bbr->ack_epoch_acked = min(0xFFFFFU,
 +                                bbr->ack_epoch_acked + rs->acked_sacked);
 +    extra_acked = bbr->ack_epoch_acked - expected_acked;
-+    extra_acked = min(extra_acked, tp->snd_cwnd);
++    extra_acked = min(extra_acked, tcp_snd_cwnd(tp));
 +    if (extra_acked > bbr->extra_acked[bbr->extra_acked_win_idx])
 +        bbr->extra_acked[bbr->extra_acked_win_idx] = extra_acked;
 +}
@@ -1162,7 +1164,7 @@ index 0000000..05cf76a
 +    bbr->prior_cwnd = 0;
 +    bbr->tso_segs_goal = 0;  /* default segs per skb until first ACK */
 +    bbr->rtt_cnt = 0;
-+    bbr->next_rtt_delivered = 0;
++    bbr->next_rtt_delivered = tp->delivered;
 +    bbr->prev_ca_state = TCP_CA_Open;
 +    bbr->packet_conservation = 0;
 +
@@ -1213,7 +1215,7 @@ index 0000000..05cf76a
 +	bbr->full_bw = 0;   /* spurious slow-down; reset full pipe detection */
 +	bbr->full_bw_cnt = 0;
 +	bbr_reset_lt_bw_sampling(sk);
-+    return tcp_sk(sk)->snd_cwnd;
++    return tcp_snd_cwnd(tcp_sk(sk));
 +}
 +
 +/* Entering loss recovery, so save cwnd for when we exit or undo recovery. */
@@ -1274,10 +1276,36 @@ index 0000000..05cf76a
 +    .set_state  = bbr_set_state,
 +};
 +
++BTF_SET8_START(tcp_bbr_check_kfunc_ids)
++#ifdef CONFIG_X86
++#ifdef CONFIG_DYNAMIC_FTRACE
++BTF_ID_FLAGS(func, bbr_init)
++BTF_ID_FLAGS(func, bbr_main)
++BTF_ID_FLAGS(func, bbr_sndbuf_expand)
++BTF_ID_FLAGS(func, bbr_undo_cwnd)
++BTF_ID_FLAGS(func, bbr_cwnd_event)
++BTF_ID_FLAGS(func, bbr_ssthresh)
++BTF_ID_FLAGS(func, bbr_min_tso_segs)
++BTF_ID_FLAGS(func, bbr_set_state)
++#endif
++#endif
++BTF_SET8_END(tcp_bbr_check_kfunc_ids)
++
++static const struct btf_kfunc_id_set tcp_bbr_kfunc_set = {
++    .owner = THIS_MODULE,
++    .set   = &tcp_bbr_check_kfunc_ids,
++};
++
 +static int __init bbr_register(void)
 +{
++    int ret;
++
 +    BUILD_BUG_ON(sizeof(struct bbr) > ICSK_CA_PRIV_SIZE);
-+    return tcp_register_congestion_control(&tcp_bbr_cong_ops);
++
++	ret = register_btf_kfunc_id_set(BPF_PROG_TYPE_STRUCT_OPS, &tcp_bbr_kfunc_set);
++	if (ret < 0)
++        return ret;
++	return tcp_register_congestion_control(&tcp_bbr_cong_ops);
 +}
 +
 +static void __exit bbr_unregister(void)
@@ -1295,75 +1323,23 @@ index 0000000..05cf76a
 +MODULE_LICENSE("Dual BSD/GPL");
 +MODULE_DESCRIPTION("TCP BBR (Bottleneck Bandwidth and RTT)");
 diff --git a/net/ipv4/tcp_output.c b/net/ipv4/tcp_output.c
-index bde781f..e05b593 100644
+index c69f4d966..aebcae076 100644
 --- a/net/ipv4/tcp_output.c
 +++ b/net/ipv4/tcp_output.c
-@@ -1957,7 +1957,7 @@ static bool tcp_nagle_check(bool partial, const struct tcp_sock *tp,
- /* Return how many segs we'd like on a TSO packet,
-  * to send one TSO packet per ms
+@@ -1970,7 +1970,7 @@ static bool tcp_nagle_check(bool partial, const struct tcp_sock *tp,
+  * for every 2^9 usec (aka 512 us) of RTT, so that the RTT-based allowance
+  * is below 1500 bytes after 6 * ~500 usec = 3ms.
   */
 -static u32 tcp_tso_autosize(const struct sock *sk, unsigned int mss_now,
 +u32 tcp_tso_autosize(const struct sock *sk, unsigned int mss_now,
  			    int min_tso_segs)
  {
- 	u32 bytes, segs;
-@@ -1975,6 +1975,7 @@ static u32 tcp_tso_autosize(const struct sock *sk, unsigned int mss_now,
+ 	unsigned long bytes;
+@@ -1986,6 +1986,7 @@ static u32 tcp_tso_autosize(const struct sock *sk, unsigned int mss_now,
  
- 	return segs;
+ 	return max_t(u32, bytes / mss_now, min_tso_segs);
  }
 +EXPORT_SYMBOL(tcp_tso_autosize);
  
  /* Return the number of segments we want in the skb we are transmitting.
   * See if congestion control module wants to decide; otherwise, autosize.
-diff --git a/net/sched/Kconfig b/net/sched/Kconfig
-index 1e8ab47..a996df1 100644
---- a/net/sched/Kconfig
-+++ b/net/sched/Kconfig
-@@ -332,7 +332,8 @@ config NET_SCH_CAKE
- 	  If unsure, say N.
- 
- config NET_SCH_FQ
--	tristate "Fair Queue"
-+        bool "Fair Queue"
-+        default y
- 	help
- 	  Say Y here if you want to use the FQ packet scheduling algorithm.
- 
-@@ -439,8 +440,9 @@ config NET_SCH_ETS
- 
- 	  If unsure, say N.
- 
--menuconfig NET_SCH_DEFAULT
-+menuconfig NET_SCH_DEFAULT_BBRP
- 	bool "Allow override default queue discipline"
-+        default y
- 	help
- 	  Support for selection of default queuing discipline.
- 
-@@ -450,11 +452,15 @@ menuconfig NET_SCH_DEFAULT
- 
- 	  If unsure, say N.
- 
--if NET_SCH_DEFAULT
-+if NET_SCH_DEFAULT_BBRP
-+
-+config NET_SCH_DEFAULT
-+        bool
-+        default NET_SCH_DEFAULT_BBRP
- 
- choice
- 	prompt "Default queuing discipline"
--	default DEFAULT_PFIFO_FAST
-+	default DEFAULT_FQ
- 	help
- 	  Select the queueing discipline that will be used by default
- 	  for all network devices.
-@@ -485,7 +491,7 @@ config DEFAULT_NET_SCH
- 	default "fq_codel" if DEFAULT_FQ_CODEL
- 	default "fq_pie" if DEFAULT_FQ_PIE
- 	default "sfq" if DEFAULT_SFQ
--	default "pfifo_fast"
-+	default "fq"
- endif
- 
- comment "Classification"
