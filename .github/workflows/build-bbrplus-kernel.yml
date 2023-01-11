@@ -115,6 +115,8 @@ jobs:
       working-directory: ./kernel
       run:  |
          scripts/config --disable MODULE_SIG
+         scripts/config --disable MODULE_SIG_FORCE
+         scripts/config --disable MODULE_SIG_ALL
          scripts/config --disable SECURITY_LOCKDOWN_LSM
          scripts/config --disable DEBUG_INFO
          scripts/config --disable MODULE_SIG
