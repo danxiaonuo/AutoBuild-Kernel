@@ -119,7 +119,6 @@ jobs:
          scripts/config --disable MODULE_SIG_ALL
          scripts/config --disable SECURITY_LOCKDOWN_LSM
          scripts/config --disable DEBUG_INFO
-         scripts/config --disable MODULE_SIG
          
     # 加载自定义脚本  
     - name: 加载自定义脚本
