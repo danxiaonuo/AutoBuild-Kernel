@@ -114,6 +114,7 @@ jobs:
     - name: 禁用签名调试
       working-directory: ./kernel
       run:  |
+         scripts/config --disable MODULE_SIG
          scripts/config --disable SECURITY_LOCKDOWN_LSM
          scripts/config --disable DEBUG_INFO
          scripts/config --disable MODULE_SIG
